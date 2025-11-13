@@ -2,7 +2,6 @@
 Streamlit Dashboard for Investment Portfolio Analyzer
 Interactive web application for portfolio analysis and visualization
 """
-
 import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
@@ -14,6 +13,7 @@ import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from src.portfolio_analyzer import PortfolioAnalyzer
+from src.portfolio_chat import PortfolioChatAssistant
 
 # Page configuration
 st.set_page_config(
@@ -297,6 +297,82 @@ if st.session_state.data_loaded:
     
     if report['diversification']['top_3_weight'] > 0.70:
         st.warning("⚠️ Top 3 positions exceed 70% of portfolio. Increase diversification.")
+    
+    # AI Chat Assistant
+    st.header("💬 AI Financial Advisor")
+    
+    # Initialize chat assistant in session state
+    if 'chat_assistant' not in st.session_state:
+        try:
+            st.session_state.chat_assistant = PortfolioChatAssistant()
+            st.session_state.chat_history = []
+        except ValueError as e:
+            st.error("⚠️ API key not configured. Add your Anthropic API key to .env file to enable chat.")
+            st.session_state.chat_assistant = None
+    
+    if st.session_state.chat_assistant:
+        # Build portfolio context from report
+        portfolio_context = {
+            'total_value': report['valuation']['total_value'],
+            'risk_level': report['risk_metrics']['risk_level'] if report['risk_metrics'] else 'Unknown',
+            'sharpe_ratio': f"{report['risk_metrics']['sharpe_ratio']:.2f}" if report['risk_metrics'] else 'N/A',
+            'volatility': f"{report['risk_metrics']['volatility']*100:.2f}%" if report['risk_metrics'] else 'N/A',
+            'diversification_score': report['diversification']['diversification_score'],
+            'num_holdings': report['diversification']['num_holdings']
+        }
+        
+        # Chat interface
+        st.markdown("""
+        Ask questions about your portfolio, risk metrics, or get investment advice based on your data.
+        
+        **Example questions:**
+        - What does my Sharpe Ratio mean?
+        - Is my portfolio too risky?
+        - Should I rebalance now?
+        - How can I improve diversification?
+        """)
+        
+        # Display chat history
+        for message in st.session_state.chat_history:
+            if message['role'] == 'user':
+                st.chat_message("user").write(message['content'])
+            else:
+                st.chat_message("assistant").write(message['content'])
+        
+        # Chat input
+        user_question = st.chat_input("Ask about your portfolio...")
+        
+        if user_question:
+            # Add user message to history
+            st.session_state.chat_history.append({
+                'role': 'user',
+                'content': user_question
+            })
+            
+            # Display user message
+            st.chat_message("user").write(user_question)
+            
+            # Get AI response with portfolio context
+            with st.spinner("Thinking..."):
+                response = st.session_state.chat_assistant.chat(
+                    user_question, 
+                    portfolio_context
+                )
+            
+            # Add assistant response to history
+            st.session_state.chat_history.append({
+                'role': 'assistant',
+                'content': response
+            })
+            
+            # Display assistant response
+            st.chat_message("assistant").write(response)
+        
+        # Clear chat button
+        if st.button("Clear Chat History"):
+            st.session_state.chat_assistant.reset_conversation()
+            st.session_state.chat_history = []
+            st.rerun()
 
 else:
     # Welcome screen
